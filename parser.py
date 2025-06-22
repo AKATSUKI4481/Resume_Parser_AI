@@ -1,14 +1,15 @@
+# 📦 Original Resume Parser Code (Unchanged Logic)
 import pdfminer.high_level
 import docx2txt
 import spacy
 import re
 import csv
 import json
+import tkinter as tk
+from tkinter import filedialog, messagebox, scrolledtext
 
-# Load the spaCy English NLP model
 nlp = spacy.load("en_core_web_sm")
 
-#Extract raw text from resume file which can be PDF or DOCX
 def extract_text(file_path):
     if file_path.endswith('.pdf'):
         with open(file_path, 'rb') as f:
@@ -18,89 +19,96 @@ def extract_text(file_path):
     else:
         return ""
 
-#Extract name from the text using spaCy
 def extract_name(text):
     doc = nlp(text)
     candidates = [ent.text.strip() for ent in doc.ents if ent.label_ == "PERSON" and 1 < len(ent.text.split()) <= 3]
-
-    false_positives = {"Problem Solving", "Stellarium"}  # Add any other common false positives here
-
+    false_positives = {"Problem Solving", "Stellarium"}
     for candidate in candidates:
-        # Remove newlines & extra spaces
         clean_candidate = " ".join(candidate.split())
-        
-        # Filter false positives
         if clean_candidate in false_positives:
             continue
-        
-        # Check if contain mostly alphabetic characters 
         if all(word.isalpha() for word in clean_candidate.split()):
             return clean_candidate
-
     return None
 
-
-#Extract email using regex
 def extract_email(text):
     match = re.search(r'\w+@\w+\.\w+', text)
     return match.group(0) if match else None
 
-#Extract phone using same thing that is regex
 def extract_phone(text):
     match = re.search(r'\d{10}', text)
     return match.group(0) if match else None
 
-#Extract skills from text given a skills list saved in a text file containing prementioned skills
 def extract_skills(text, skill_set):
     text = text.lower()
-    found = set()  # use set to avoid duplicates
+    found = set()
     for skill in skill_set:
         skill_lower = skill.lower()
-        # Match whole word 
         if re.search(r'\b' + re.escape(skill_lower) + r'\b', text):
             found.add(skill)
     return list(found)
 
-#Save extracted data to CSV
 def save_to_csv(data, filename="parsed_resume.csv"):
     with open(filename, mode='w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
-        # Write header
         writer.writerow(["Name", "Email", "Phone", "Skills"])
-        # Write data row
         writer.writerow([data["name"], data["email"], data["phone"], ", ".join(data["skills"])])
 
-#Save extracted data to JSON
 def save_to_json(data, filename="parsed_resume.json"):
     with open(filename, mode='w', encoding='utf-8') as f:
         json.dump(data, f, indent=4)
 
-# Main execution
+# 🖼️ GUI Interface (Only Added Below)
+def run_parser_gui():
+    def browse_file():
+        file_path = filedialog.askopenfilename(filetypes=[("PDF files", "*.pdf"), ("Word files", "*.docx")])
+        if file_path:
+            try:
+                text = extract_text(file_path)
+
+                with open("skills.txt", "r") as f:
+                    skills_list = [line.strip() for line in f.readlines()]
+
+                name = extract_name(text)
+                email = extract_email(text)
+                phone = extract_phone(text)
+                skills = extract_skills(text, skills_list)
+
+                parsed_data = {
+                    "name": name,
+                    "email": email,
+                    "phone": phone,
+                    "skills": skills
+                }
+
+                save_to_csv(parsed_data)
+                save_to_json(parsed_data)
+
+                output_area.delete("1.0", tk.END)
+                output_area.insert(tk.END, f"📄 Name: {name}\n")
+                output_area.insert(tk.END, f"✉️ Email: {email}\n")
+                output_area.insert(tk.END, f"📞 Phone: {phone}\n")
+                output_area.insert(tk.END, f"🛠️ Skills: {', '.join(skills)}\n\n")
+                output_area.insert(tk.END, "✅ Data saved to parsed_resume.csv and parsed_resume.json")
+
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to parse file:\n{e}")
+
+    # Tkinter GUI Layout
+    root = tk.Tk()
+    root.title("AI Resume Parser")
+    root.geometry("600x400")
+    root.resizable(False, False)
+
+    tk.Label(root, text="📁 Select a Resume File (.pdf / .docx)", font=("Arial", 12)).pack(pady=10)
+    tk.Button(root, text="Browse Resume", font=("Arial", 12), command=browse_file, bg="#4CAF50", fg="white", padx=10, pady=5).pack()
+
+    output_area = scrolledtext.ScrolledText(root, wrap=tk.WORD, font=("Consolas", 10), height=15, width=70)
+    output_area.pack(pady=10)
+
+    root.mainloop()
+
+# Launch GUI
 if __name__ == "__main__":
-    text = extract_text(r"INSERT FILE PATH OF DESIRED RESUME WHOSE CONTENTS ARE TO BE EXTRACTED.pdf")
+    run_parser_gui()
 
-    with open("skills.txt", "r") as f:
-        skills_list = [line.strip() for line in f.readlines()]
-
-    name = extract_name(text)
-    email = extract_email(text)
-    phone = extract_phone(text)
-    skills = extract_skills(text, skills_list)
-
-    parsed_data = {
-        "name": name,
-        "email": email,
-        "phone": phone,
-        "skills": skills
-    }
-
-    # Print to console
-    print("Name:", name)
-    print("Email:", email)
-    print("Phone:", phone)
-    print("Skills:", skills)
-
-    # Save results
-    save_to_csv(parsed_data)
-    save_to_json(parsed_data)
-    print("Data saved to parsed_resume.csv and parsed_resume.json")
